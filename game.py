@@ -1,18 +1,16 @@
-from pieces import *
+from pieces import Pawn, Rook, Knight, Bishop, Queen, King
 
 class ChessGame:
     def __init__(self):
         self.board = self.create_board()
         self.selected_piece = None
-        self.selected_pos = None  # Will store as (row, col) in board coords
+        self.selected_pos = None
         self.current_turn = 'white'
         self.valid_moves = []
+        self.last_move = None  # Track last move for en passant
     
     def create_board(self):
-        """Initialize the chess board with actual Piece objects
-        Board indexing: row 0 = rank 8 (black back rank), row 7 = rank 1 (white back rank)
-        Column indexing: col 0 = file a, col 7 = file h
-        """
+        """Initialize the chess board with actual Piece objects"""
         board = [[None for _ in range(8)] for _ in range(8)]
         
         # Black pieces (top) - rank 8
@@ -48,70 +46,138 @@ class ChessGame:
     def pixel_to_board_coords(self, pixel_pos):
         """Convert pixel coordinates to board row/col (0-7)"""
         x, y = pixel_pos
-        col = x // 75  # 600 / 8 = 75
+        col = x // 75
         row = y // 75
         return row, col
     
     def board_to_chess_notation(self, row, col):
-        """Convert board coordinates to standard chess notation (e.g., 'e2')
-        Top-left (0,0) = a8, so row increases down toward rank 1
-        """
-        file = chr(ord('a') + col)  # a-h (0-7)
-        rank = str(8 - row)  # row 0 = rank 8, row 7 = rank 1
+        """Convert board coordinates to standard chess notation (e.g., 'e2')"""
+        file = chr(ord('a') + col)
+        rank = str(8 - row)
         return f"{file}{rank}"
     
     def chess_notation_to_board(self, notation):
-        """Convert chess notation (e.g., 'e2') to board coordinates
-        a8 = (0,0), h1 = (7,7)
-        """
-        file = ord(notation[0]) - ord('a')  # 0-7
-        rank = int(notation[1])  # 1-8
-        row = 8 - rank  # rank 8 = row 0, rank 1 = row 7
+        """Convert chess notation (e.g., 'e2') to board coordinates"""
+        file = ord(notation[0]) - ord('a')
+        rank = int(notation[1])
+        row = 8 - rank
         return row, file
     
     def handle_click(self, pos):
         """Handle mouse clicks for piece selection and movement"""
         row, col = self.pixel_to_board_coords(pos)
-        print(row, col)
-        # Bounds check
+        
         if not (0 <= row < 8 and 0 <= col < 8):
             return
         
         clicked_piece = self.board[row][col]
         chess_pos = self.board_to_chess_notation(row, col)
         
-        # If a piece is already selected
         if self.selected_piece is not None:
-            # Check if clicking on a valid move destination
             if (row, col) in self.valid_moves:
                 self.move_piece(self.selected_pos, (row, col))
                 self.selected_piece = None
                 self.selected_pos = None
                 self.valid_moves = []
-            # Check if clicking on another piece of the same color to reselect
             elif clicked_piece is not None and clicked_piece.color == self.current_turn:
                 self.selected_piece = clicked_piece
                 self.selected_pos = (row, col)
-                self.valid_moves = clicked_piece.get_valid_moves(self.board)
+                self.valid_moves = self.get_legal_moves(clicked_piece)
                 selected_chess_pos = self.board_to_chess_notation(row, col)
                 print(f"Selected {clicked_piece.type} at {selected_chess_pos}")
-            # Otherwise deselect
             else:
                 self.selected_piece = None
                 self.selected_pos = None
                 self.valid_moves = []
-        
-        # No piece is selected, try to select one
         else:
             if clicked_piece is not None and clicked_piece.color == self.current_turn:
                 self.selected_piece = clicked_piece
                 self.selected_pos = (row, col)
-                self.valid_moves = clicked_piece.get_valid_moves(self.board)
+                self.valid_moves = self.get_legal_moves(clicked_piece)
                 print(f"Selected {clicked_piece.type} at {chess_pos}")
                 print(f"Valid moves: {[self.board_to_chess_notation(r, c) for r, c in self.valid_moves]}")
     
+    def get_legal_moves(self, piece):
+        """Get valid moves including special moves like en passant"""
+        moves = piece.get_valid_moves(self.board)
+        
+        
+        # Add en passant moves for pawns
+        if isinstance(piece, Pawn) and self.last_move:
+            en_passant_moves = self.get_en_passant_moves(piece)
+            moves.extend(en_passant_moves)
+        
+        # Add castling moves for king
+        if isinstance(piece, King):
+            castling_moves = self.get_castling_moves(piece)
+            moves.extend(castling_moves)
+        
+        return moves
+    
+    def get_en_passant_moves(self, pawn):
+        """Get en passant capture moves for a pawn"""
+        moves = []
+        last_from, last_to = self.last_move
+        last_from_row, last_from_col = last_from
+        last_to_row, last_to_col = last_to
+        
+        # Check if last move was a pawn moving two squares
+        last_piece = None
+        # Reconstruct what was captured
+        if abs(last_from_row - last_to_row) == 2 and isinstance(self.board[last_to_row][last_to_col], Pawn):
+            # Pawn moved two squares
+            direction = -1 if pawn.color == 'white' else 1
+            
+            # Check if enemy pawn is beside us
+            for dc in [-1, 1]:
+                adjacent_col = pawn.col + dc
+                if 0 <= adjacent_col < 8:
+                    adjacent_piece = self.board[pawn.row][adjacent_col]
+                    
+                    # If adjacent pawn just moved two squares and is on the right row
+                    if (isinstance(adjacent_piece, Pawn) and 
+                        adjacent_piece.color != pawn.color and
+                        adjacent_piece.col == last_to_col and
+                        adjacent_piece.row == last_to_row):
+                        
+                        capture_row = pawn.row + direction
+                        if 0 <= capture_row < 8:
+                            moves.append((capture_row, adjacent_col))
+        
+        return moves
+    
+    def get_castling_moves(self, king):
+        """Get castling moves for a king"""
+        moves = []
+        
+        if king.has_moved:
+            return moves
+        
+        # Kingside castling (right)
+        rook_col = 7
+        if self.board[king.row][rook_col] is not None:
+            rook = self.board[king.row][rook_col]
+            if isinstance(rook, Rook) and rook.color == king.color and not rook.has_moved:
+                # Check if squares between are empty
+                if (self.board[king.row][5] is None and 
+                    self.board[king.row][6] is None):
+                    moves.append((king.row, 6))  # King moves to g file
+        
+        # Queenside castling (left)
+        rook_col = 0
+        if self.board[king.row][rook_col] is not None:
+            rook = self.board[king.row][rook_col]
+            if isinstance(rook, Rook) and rook.color == king.color and not rook.has_moved:
+                # Check if squares between are empty
+                if (self.board[king.row][1] is None and 
+                    self.board[king.row][2] is None and
+                    self.board[king.row][3] is None):
+                    moves.append((king.row, 2))  # King moves to c file
+        
+        return moves
+    
     def move_piece(self, from_pos, to_pos):
-        """Move a piece from one square to another"""
+        """Move a piece from one square to another, handling special moves"""
         from_row, from_col = from_pos
         to_row, to_col = to_pos
         
@@ -119,14 +185,47 @@ class ChessGame:
         from_notation = self.board_to_chess_notation(from_row, from_col)
         to_notation = self.board_to_chess_notation(to_row, to_col)
         
-        # Move the piece
+        # Handle en passant
+        if isinstance(piece, Pawn) and self.board[to_row][to_col] is None and from_col != to_col:
+            # Pawn captures diagonally on empty square = en passant
+            captured_pawn = self.board[from_row][to_col]
+            self.board[from_row][to_col] = None
+            print(f"En passant! Captured pawn at {self.board_to_chess_notation(from_row, to_col)}")
+        
+        # Handle castling
+        elif isinstance(piece, King) and abs(from_col - to_col) == 2:
+            # King moved two squares = castling
+            if to_col > from_col:  # Kingside
+                rook = self.board[from_row][7]
+                self.board[from_row][7] = None
+                self.board[from_row][5] = rook
+                rook.col = 5
+                rook.has_moved = True
+                print("Kingside castling!")
+            else:  # Queenside
+                rook = self.board[from_row][0]
+                self.board[from_row][0] = None
+                self.board[from_row][3] = rook
+                rook.col = 3
+                rook.has_moved = True
+                print("Queenside castling!")
+        
+        # Normal move
         self.board[from_row][from_col] = None
         self.board[to_row][to_col] = piece
         
-        # Update piece's position
         piece.row = to_row
         piece.col = to_col
         piece.has_moved = True
+        
+        # Handle pawn promotion
+        if isinstance(piece, Pawn):
+            if (piece.color == 'white' and to_row == 0) or (piece.color == 'black' and to_row == 7):
+                self.board[to_row][to_col] = Queen(piece.color, to_row, to_col)
+                print(f"Pawn promoted to Queen at {to_notation}!")
+        
+        # Track last move
+        self.last_move = (from_pos, to_pos)
         
         # Switch turns
         self.current_turn = 'black' if self.current_turn == 'white' else 'white'
