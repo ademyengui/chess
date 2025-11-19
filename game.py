@@ -7,7 +7,9 @@ class ChessGame:
         self.selected_pos = None
         self.current_turn = 'white'
         self.valid_moves = []
-        self.last_move = None  # Track last move for en passant
+        self.last_move = None
+        self.game_over = False
+        self.checkmate = False
     
     def create_board(self):
         """Initialize the chess board with actual Piece objects"""
@@ -63,8 +65,73 @@ class ChessGame:
         row = 8 - rank
         return row, file
     
+    def find_king(self, color, board=None):
+        """Find the king of a given color on the board"""
+        if board is None:
+            board = self.board
+        
+        for row in range(8):
+            for col in range(8):
+                piece = board[row][col]
+                if isinstance(piece, King) and piece.color == color:
+                    return row, col
+        return None
+    
+    def is_square_attacked(self, row, col, by_color, board=None):
+        """Check if a square is attacked by pieces of a given color"""
+        if board is None:
+            board = self.board
+        
+        # Check all opponent pieces
+        for r in range(8):
+            for c in range(8):
+                piece = board[r][c]
+                if piece is not None and piece.color == by_color:
+                    # Get raw moves without checking for check
+                    moves = piece.get_valid_moves(board)
+                    if (row, col) in moves:
+                        return True
+        
+        return False
+    
+    def is_in_check(self, color, board=None):
+        """Check if a color's king is in check"""
+        if board is None:
+            board = self.board
+        
+        king_pos = self.find_king(color, board)
+        if king_pos is None:
+            return False
+        
+        row, col = king_pos
+        enemy_color = 'black' if color == 'white' else 'white'
+        return self.is_square_attacked(row, col, enemy_color, board)
+    
+    def is_checkmate(self, color, board=None):
+        """Check if a color is in checkmate"""
+        if board is None:
+            board = self.board
+        
+        if not self.is_in_check(color, board):
+            return False
+        
+        # Check if there are any legal moves
+        for row in range(8):
+            for col in range(8):
+                piece = board[row][col]
+                if piece is not None and piece.color == color:
+                    legal_moves = self.get_legal_moves(piece, board)
+                    if legal_moves:
+                        return False
+        
+        return True
+    
     def handle_click(self, pos):
         """Handle mouse clicks for piece selection and movement"""
+        if self.game_over:
+            print("Game is over!")
+            return
+        
         row, col = self.pixel_to_board_coords(pos)
         
         if not (0 <= row < 8 and 0 <= col < 8):
@@ -97,44 +164,86 @@ class ChessGame:
                 print(f"Selected {clicked_piece.type} at {chess_pos}")
                 print(f"Valid moves: {[self.board_to_chess_notation(r, c) for r, c in self.valid_moves]}")
     
-    def get_legal_moves(self, piece):
-        """Get valid moves including special moves like en passant"""
-        moves = piece.get_valid_moves(self.board)
+    def get_legal_moves(self, piece, board=None):
+        """Get valid moves that don't leave the king in check"""
+        if board is None:
+            board = self.board
         
+        moves = piece.get_valid_moves(board)
+        legal_moves = []
         
-        # Add en passant moves for pawns
-        if isinstance(piece, Pawn) and self.last_move:
+        for move in moves:
+            # Simulate the move
+            temp_board = [row[:] for row in board]
+            from_row, from_col = piece.row, piece.col
+            to_row, to_col = move
+            
+            temp_board[from_row][from_col] = None
+            temp_board[to_row][to_col] = piece
+            
+            # Check if king is in check after the move
+            if not self.is_in_check(piece.color, temp_board):
+                legal_moves.append(move)
+        
+        # Add special moves only if they don't leave king in check
+        if isinstance(piece, Pawn):
             en_passant_moves = self.get_en_passant_moves(piece)
-            moves.extend(en_passant_moves)
+            for move in en_passant_moves:
+                # Simulate en passant
+                temp_board = [row[:] for row in board]
+                from_row, from_col = piece.row, piece.col
+                to_row, to_col = move
+                
+                temp_board[from_row][from_col] = None
+                temp_board[to_row][to_col] = piece
+                temp_board[from_row][to_col] = None  # Remove captured pawn
+                
+                if not self.is_in_check(piece.color, temp_board):
+                    legal_moves.append(move)
         
-        # Add castling moves for king
         if isinstance(piece, King):
             castling_moves = self.get_castling_moves(piece)
-            moves.extend(castling_moves)
+            for move in castling_moves:
+                # Simulate castling
+                temp_board = [row[:] for row in board]
+                from_row, from_col = piece.row, piece.col
+                to_row, to_col = move
+                
+                # Move king
+                temp_board[from_row][from_col] = None
+                temp_board[to_row][to_col] = piece
+                
+                # Check if king passes through or lands in check
+                if not self.is_in_check(piece.color, temp_board):
+                    # Also check intermediate square for castling
+                    if abs(to_col - from_col) == 2:
+                        intermediate_col = (from_col + to_col) // 2
+                        if not self.is_square_attacked(from_row, intermediate_col, 
+                                                       'black' if piece.color == 'white' else 'white', temp_board):
+                            legal_moves.append(move)
+                    else:
+                        legal_moves.append(move)
         
-        return moves
+        return legal_moves
     
     def get_en_passant_moves(self, pawn):
         """Get en passant capture moves for a pawn"""
         moves = []
+        if not self.last_move:
+            return moves
+        
         last_from, last_to = self.last_move
         last_from_row, last_from_col = last_from
         last_to_row, last_to_col = last_to
         
-        # Check if last move was a pawn moving two squares
-        last_piece = None
-        # Reconstruct what was captured
         if abs(last_from_row - last_to_row) == 2 and isinstance(self.board[last_to_row][last_to_col], Pawn):
-            # Pawn moved two squares
             direction = -1 if pawn.color == 'white' else 1
             
-            # Check if enemy pawn is beside us
             for dc in [-1, 1]:
                 adjacent_col = pawn.col + dc
                 if 0 <= adjacent_col < 8:
                     adjacent_piece = self.board[pawn.row][adjacent_col]
                     
-                    # If adjacent pawn just moved two squares and is on the right row
                     if (isinstance(adjacent_piece, Pawn) and 
                         adjacent_piece.color != pawn.color and
                         adjacent_piece.col == last_to_col and
@@ -147,10 +256,10 @@ class ChessGame:
         return moves
     
     def get_castling_moves(self, king):
-        """Get castling moves for a king"""
+        """Get castling moves for a king (not in check, not through check)"""
         moves = []
         
-        if king.has_moved:
+        if king.has_moved or self.is_in_check(king.color):
             return moves
         
         # Kingside castling (right)
@@ -158,21 +267,19 @@ class ChessGame:
         if self.board[king.row][rook_col] is not None:
             rook = self.board[king.row][rook_col]
             if isinstance(rook, Rook) and rook.color == king.color and not rook.has_moved:
-                # Check if squares between are empty
                 if (self.board[king.row][5] is None and 
                     self.board[king.row][6] is None):
-                    moves.append((king.row, 6))  # King moves to g file
+                    moves.append((king.row, 6))
         
         # Queenside castling (left)
         rook_col = 0
         if self.board[king.row][rook_col] is not None:
             rook = self.board[king.row][rook_col]
             if isinstance(rook, Rook) and rook.color == king.color and not rook.has_moved:
-                # Check if squares between are empty
                 if (self.board[king.row][1] is None and 
                     self.board[king.row][2] is None and
                     self.board[king.row][3] is None):
-                    moves.append((king.row, 2))  # King moves to c file
+                    moves.append((king.row, 2))
         
         return moves
     
@@ -187,14 +294,12 @@ class ChessGame:
         
         # Handle en passant
         if isinstance(piece, Pawn) and self.board[to_row][to_col] is None and from_col != to_col:
-            # Pawn captures diagonally on empty square = en passant
             captured_pawn = self.board[from_row][to_col]
             self.board[from_row][to_col] = None
             print(f"En passant! Captured pawn at {self.board_to_chess_notation(from_row, to_col)}")
         
         # Handle castling
         elif isinstance(piece, King) and abs(from_col - to_col) == 2:
-            # King moved two squares = castling
             if to_col > from_col:  # Kingside
                 rook = self.board[from_row][7]
                 self.board[from_row][7] = None
@@ -224,9 +329,15 @@ class ChessGame:
                 self.board[to_row][to_col] = Queen(piece.color, to_row, to_col)
                 print(f"Pawn promoted to Queen at {to_notation}!")
         
-        # Track last move
         self.last_move = (from_pos, to_pos)
-        
-        # Switch turns
         self.current_turn = 'black' if self.current_turn == 'white' else 'white'
-        print(f"Moved {piece.type} from {from_notation} to {to_notation}. {self.current_turn.capitalize()}'s turn.")
+        
+        # Check game state
+        if self.is_checkmate(self.current_turn):
+            self.game_over = True
+            self.checkmate = True
+            print(f"Checkmate! {self.current_turn.capitalize()} loses!")
+        elif self.is_in_check(self.current_turn):
+            print(f"{self.current_turn.capitalize()} is in check!")
+        else:
+            print(f"Moved {piece.type} from {from_notation} to {to_notation}. {self.current_turn.capitalize()}'s turn.")
