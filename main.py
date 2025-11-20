@@ -1,6 +1,8 @@
 import pygame
 from pieces import *
 from game import *
+from ChessAI import ChessAI
+import time
 
 pygame.init()
 WIDTH, HEIGHT = 600, 600
@@ -60,8 +62,11 @@ def draw_valid_moves(valid_moves):
 
 def main():
     game = ChessGame()
+    ai = ChessAI('black', game) 
     running = True
     clock = pygame.time.Clock()
+    ai_thinking = False
+    ai_move_time = 0
     
     while running:
         clock.tick(60)
@@ -70,8 +75,19 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
+                if event.button == 1 and not game.game_over and game.current_turn == 'white':
                     game.handle_click(event.pos)
+        
+        # AI's turn
+        if game.current_turn == 'black' and not game.game_over and not ai_thinking:
+            ai_thinking = True
+            ai_move_time = time.time()
+        
+        if ai_thinking:
+            # Give AI time to "think" (at least 0.5 seconds for realism)
+            if time.time() - ai_move_time > 0.5:
+                ai.make_move()
+                ai_thinking = False
         
         draw_board()
         draw_pieces(game.board)
