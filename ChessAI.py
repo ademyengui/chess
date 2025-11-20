@@ -14,27 +14,71 @@ class ChessAI:
             'bishop': 3,
             'rook': 5,
             'queen': 9,
-            'king': 0  # King value not counted
+            'king': 9999  # King value not counted
         }
     
-    def get_best_move(self):
-        """Get the best move for the AI"""
+    def get_best_move(self, depth=4):
+        """Get the best move using Minimax algorithm"""
         legal_moves = self.get_all_legal_moves(self.color, self.game.board)
         
         if not legal_moves:
             return None
         
-        # Evaluate each move and pick the best one
         best_move = None
         best_score = float('-inf')
         
         for move in legal_moves:
-            score = self.evaluate_move(move)
+            # Simulate the move
+            score = self.minimax(move, depth - 1, False, self.game.board)
             if score > best_score:
                 best_score = score
                 best_move = move
         
         return best_move
+    
+    def minimax(self, move, depth, is_maximizing, board):
+        """Minimax algorithm: look ahead and evaluate positions"""
+        from_pos, to_pos = move
+        from_row, from_col = from_pos
+        to_row, to_col = to_pos
+        
+        # Create a copy of the board to simulate the move
+        temp_board = [row[:] for row in board]
+        piece = temp_board[from_row][from_col]
+        temp_board[from_row][from_col] = None
+        temp_board[to_row][to_col] = piece
+        
+        # Base case: depth reached or game over
+        if depth == 0:
+            return self.evaluate_position(temp_board)
+        
+        # Maximizing player (AI - trying to maximize score)
+        if is_maximizing:
+            max_score = float('-inf')
+            opponent_moves = self.get_all_legal_moves(self.color, temp_board)
+            
+            if not opponent_moves:
+                return self.evaluate_position(temp_board)
+            
+            for next_move in opponent_moves:
+                score = self.minimax(next_move, depth - 1, False, temp_board)
+                max_score = max(score, max_score)
+            
+            return max_score
+        
+        # Minimizing player (opponent - trying to minimize AI's score)
+        else:
+            min_score = float('inf')
+            opponent_moves = self.get_all_legal_moves(self.opponent_color, temp_board)
+            
+            if not opponent_moves:
+                return self.evaluate_position(temp_board)
+            
+            for next_move in opponent_moves:
+                score = self.minimax(next_move, depth - 1, True, temp_board)
+                min_score = min(score, min_score)
+            
+            return min_score
     
     def get_all_legal_moves(self, color, board):
         """Get all legal moves for a color"""
