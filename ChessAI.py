@@ -14,11 +14,11 @@ class ChessAI:
             'bishop': 3,
             'rook': 5,
             'queen': 9,
-            'king': 9999  # King value not counted
+            'king': 0  # King value not counted
         }
     
-    def get_best_move(self, depth=4):
-        """Get the best move using Minimax algorithm"""
+    def get_best_move(self, depth=5):
+        """Get the best move using Minimax with Alpha-Beta Pruning"""
         legal_moves = self.get_all_legal_moves(self.color, self.game.board)
         
         if not legal_moves:
@@ -26,18 +26,20 @@ class ChessAI:
         
         best_move = None
         best_score = float('-inf')
+        alpha = float('-inf')
+        beta = float('inf')
         
         for move in legal_moves:
-            # Simulate the move
-            score = self.minimax(move, depth - 1, False, self.game.board)
+            score = self.minimax_ab(move, depth - 1, False, alpha, beta, self.game.board)
             if score > best_score:
                 best_score = score
                 best_move = move
+            alpha = max(alpha, best_score)
         
         return best_move
     
-    def minimax(self, move, depth, is_maximizing, board):
-        """Minimax algorithm: look ahead and evaluate positions"""
+    def minimax_ab(self, move, depth, is_maximizing, alpha, beta, board):
+        """Minimax with Alpha-Beta Pruning"""
         from_pos, to_pos = move
         from_row, from_col = from_pos
         to_row, to_col = to_pos
@@ -52,7 +54,7 @@ class ChessAI:
         if depth == 0:
             return self.evaluate_position(temp_board)
         
-        # Maximizing player (AI - trying to maximize score)
+        # Maximizing player (AI)
         if is_maximizing:
             max_score = float('-inf')
             opponent_moves = self.get_all_legal_moves(self.color, temp_board)
@@ -61,12 +63,17 @@ class ChessAI:
                 return self.evaluate_position(temp_board)
             
             for next_move in opponent_moves:
-                score = self.minimax(next_move, depth - 1, False, temp_board)
+                score = self.minimax_ab(next_move, depth - 1, False, alpha, beta, temp_board)
                 max_score = max(score, max_score)
+                alpha = max(alpha, max_score)
+                
+                # Beta cutoff
+                if beta <= alpha:
+                    break
             
             return max_score
         
-        # Minimizing player (opponent - trying to minimize AI's score)
+        # Minimizing player (opponent)
         else:
             min_score = float('inf')
             opponent_moves = self.get_all_legal_moves(self.opponent_color, temp_board)
@@ -75,8 +82,13 @@ class ChessAI:
                 return self.evaluate_position(temp_board)
             
             for next_move in opponent_moves:
-                score = self.minimax(next_move, depth - 1, True, temp_board)
+                score = self.minimax_ab(next_move, depth - 1, True, alpha, beta, temp_board)
                 min_score = min(score, min_score)
+                beta = min(beta, min_score)
+                
+                # Alpha cutoff
+                if beta <= alpha:
+                    break
             
             return min_score
     
@@ -94,36 +106,12 @@ class ChessAI:
         
         return all_moves
     
-    def evaluate_move(self, move):
-        """Evaluate a move and return a score"""
-        from_pos, to_pos = move
-        from_row, from_col = from_pos
-        to_row, to_col = to_pos
-        
-        piece = self.game.board[from_row][from_col]
-        captured_piece = self.game.board[to_row][to_col]
-        
-        score = 0
-        
-        # Prioritize captures - highest value target first
-        if captured_piece is not None:
-            score += self.piece_values.get(captured_piece.type, 0) * 10
-        
-        # Slight preference for moving pieces to the center
-        center_distance = self.distance_to_center(to_row, to_col)
-        score -= center_distance  # Closer to center = higher score
-        
-        # Penalize moving into attack (very basic)
-        if self.game.is_square_attacked(to_row, to_col, self.opponent_color, self.game.board):
-            score -= self.piece_values.get(piece.type, 0) * 2
-        
-        return score
+
     
     def distance_to_center(self, row, col):
         """Calculate how far a square is from the center (0-3, lower is better)"""
         center_row, center_col = 3.5, 3.5
         return abs(row - center_row) + abs(col - center_col)
-    
     def evaluate_position(self, board):
         """Evaluate the overall position from the AI's perspective"""
         score = 0
