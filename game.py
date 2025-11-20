@@ -1,5 +1,4 @@
-from pieces import Pawn, Rook, Knight, Bishop, Queen, King
-
+from pieces import *
 class ChessGame:
     def __init__(self):
         self.board = self.create_board()
@@ -10,6 +9,8 @@ class ChessGame:
         self.last_move = None
         self.game_over = False
         self.checkmate = False
+        self.move_history = []  # Track all board states for repetition
+        self.halfmove_clock = 0  # Moves since last capture or pawn move (50-move rule)
     
     def create_board(self):
         """Initialize the chess board with actual Piece objects"""
@@ -106,25 +107,6 @@ class ChessGame:
         row, col = king_pos
         enemy_color = 'black' if color == 'white' else 'white'
         return self.is_square_attacked(row, col, enemy_color, board)
-    
-    def is_checkmate(self, color, board=None):
-        """Check if a color is in checkmate"""
-        if board is None:
-            board = self.board
-        
-        if not self.is_in_check(color, board):
-            return False
-        
-        # Check if there are any legal moves
-        for row in range(8):
-            for col in range(8):
-                piece = board[row][col]
-                if piece is not None and piece.color == color:
-                    legal_moves = self.get_legal_moves(piece, board)
-                    if legal_moves:
-                        return False
-        
-        return True
     
     def handle_click(self, pos):
         """Handle mouse clicks for piece selection and movement"""
@@ -283,6 +265,64 @@ class ChessGame:
         
         return moves
     
+    def is_checkmate(self, color, board=None):
+        """Check if a color is in checkmate"""
+        if board is None:
+            board = self.board
+        
+        if not self.is_in_check(color, board):
+            return False
+        
+        # Check if there are any legal moves
+        for row in range(8):
+            for col in range(8):
+                piece = board[row][col]
+                if piece is not None and piece.color == color:
+                    legal_moves = self.get_legal_moves(piece, board)
+                    if legal_moves:
+                        return False
+        
+        return True
+    
+    def is_stalemate(self, color, board=None):
+        """Check if a color is in stalemate (not in check but no legal moves)"""
+        if board is None:
+            board = self.board
+        
+        # Must NOT be in check
+        if self.is_in_check(color, board):
+            return False
+        
+        # Check if there are any legal moves
+        for row in range(8):
+            for col in range(8):
+                piece = board[row][col]
+                if piece is not None and piece.color == color:
+                    legal_moves = self.get_legal_moves(piece, board)
+                    if legal_moves:
+                        return False
+        
+        return True
+    
+    def board_to_hashable(self):
+        """Convert board state to a hashable representation for move history"""
+        state = []
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece is None:
+                    state.append('.')
+                else:
+                    code = piece.get_code()
+                    state.append(code)
+        return tuple(state)
+    
+    def is_draw_by_repetition(self):
+        """Check if the same position has occurred 3 times"""
+        current_state = self.board_to_hashable()
+        repetitions = self.move_history.count(current_state)
+        return repetitions >= 3
+    
     def move_piece(self, from_pos, to_pos):
         """Move a piece from one square to another, handling special moves"""
         from_row, from_col = from_pos
@@ -332,8 +372,26 @@ class ChessGame:
         self.last_move = (from_pos, to_pos)
         self.current_turn = 'black' if self.current_turn == 'white' else 'white'
         
+        # Track move history and halfmove clock
+        self.move_history.append(self.board_to_hashable())
+        
+        # Reset halfmove clock on pawn moves or captures
+        if isinstance(piece, Pawn) or self.board[to_row][to_col] is not None:
+            self.halfmove_clock = 0
+        else:
+            self.halfmove_clock += 1
+        
         # Check game state
-        if self.is_checkmate(self.current_turn):
+        if self.is_stalemate(self.current_turn):
+            self.game_over = True
+            print(f"Stalemate! The game is a draw.")
+        elif self.is_draw_by_repetition():
+            self.game_over = True
+            print(f"Draw by repetition!")
+        elif self.halfmove_clock >= 100:  # 50-move rule
+            self.game_over = True
+            print(f"Draw by 50-move rule!")
+        elif self.is_checkmate(self.current_turn):
             self.game_over = True
             self.checkmate = True
             print(f"Checkmate! {self.current_turn.capitalize()} loses!")
