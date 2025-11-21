@@ -1,9 +1,8 @@
 import pygame
 from pieces import *
 from game import *
-from ChessAI import ChessAI
+from ai import ChessAI
 import time
-
 
 pygame.init()
 WIDTH, HEIGHT = 600, 600
@@ -68,6 +67,7 @@ def main():
     clock = pygame.time.Clock()
     ai_thinking = False
     ai_move_time = 0
+    last_move = None  # Track last move to avoid duplicate tracking
     
     while running:
         clock.tick(60)
@@ -79,6 +79,11 @@ def main():
                 if event.button == 1 and not game.game_over and game.current_turn == 'white':
                     game.handle_click(event.pos)
         
+        # Track player moves
+        if game.last_move and game.last_move != last_move:
+            ai.track_move(game.last_move[0], game.last_move[1])
+            last_move = game.last_move
+        
         # AI's turn
         if game.current_turn == 'black' and not game.game_over and not ai_thinking:
             ai_thinking = True
@@ -87,11 +92,10 @@ def main():
         if ai_thinking:
             # Give AI time to "think" (at least 0.5 seconds for realism)
             if time.time() - ai_move_time > 0.5:
-                
-                ai.make_move()
-                ai_thinking = False
                 eval_score = ai.evaluate_position(game.board)
                 print(f"Position evaluation: {eval_score:.2f}")
+                ai.make_move()
+                ai_thinking = False
         
         draw_board()
         draw_pieces(game.board)

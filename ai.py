@@ -1,11 +1,14 @@
+
 from pieces import Pawn, Rook, Knight, Bishop, Queen, King
 import random
+import chess
 
 class ChessAI:
     def __init__(self, color, game):
         self.color = color
         self.game = game
         self.opponent_color = 'black' if color == 'white' else 'white'
+        self.move_history_uci = ""  # Track all moves as UCI string
         
         # Piece values for evaluation
         self.piece_values = {
@@ -16,9 +19,30 @@ class ChessAI:
             'queen': 9,
             'king': 0  # King value not counted
         }
+        
+        # Load opening book
+        try:
+            from opening_book import OpeningBook
+            self.opening_book = OpeningBook('custom_openings.json')
+        except Exception as e:
+            print(f"Could not load opening book: {e}")
+            self.opening_book = None
     
-    def get_best_move(self, depth=4):
-        """Get the best move using Minimax with Alpha-Beta Pruning"""
+    def get_best_move(self, depth=3):
+        """Get the best move using opening book or Minimax with Alpha-Beta Pruning"""
+        
+        # Try opening book first
+        if self.opening_book:
+            next_move_uci = self.opening_book.get_next_move(self.move_history_uci)
+            if next_move_uci:
+                move = self.convert_uci_to_move(next_move_uci)
+                if move:
+                    print(f"[BOOK] Next move: {next_move_uci}")
+                    return move
+            else:
+                print(f"[BOOK] Out of book. Current: {self.move_history_uci}")
+        
+        # Fall back to minimax if not in opening book
         legal_moves = self.get_all_legal_moves(self.color, self.game.board)
         
         if not legal_moves:
@@ -37,6 +61,26 @@ class ChessAI:
             alpha = max(alpha, best_score)
         
         return best_move
+    
+    def track_move(self, from_pos, to_pos):
+        """Track a move (from player or AI) in UCI format"""
+        from_row, from_col = from_pos
+        to_row, to_col = to_pos
+        
+        # Convert to UCI
+        from_file = chr(ord('a') + from_col)
+        from_rank = str(8 - from_row)
+        to_file = chr(ord('a') + to_col)
+        to_rank = str(8 - to_row)
+        move_uci = f"{from_file}{from_rank}{to_file}{to_rank}"
+        
+        # Add to history
+        if self.move_history_uci:
+            self.move_history_uci += f" {move_uci}"
+        else:
+            self.move_history_uci = move_uci
+        
+        print(f"Move tracked: {move_uci} (history: {self.move_history_uci})")
     
     def minimax_ab(self, move, depth, is_maximizing, alpha, beta, board):
         """Minimax with Alpha-Beta Pruning"""
@@ -322,3 +366,47 @@ class ChessAI:
             self.game.move_piece(from_pos, to_pos)
             return True
         return False
+    
+    def board_to_chess_board(self):
+        """Convert our board representation to python-chess board"""
+        board = chess.Board()
+        # Start from empty board and rebuild from our position
+        board.clear()
+        
+        for row in range(8):
+            for col in range(8):
+                piece = self.game.board[row][col]
+                if piece is not None:
+                    # Convert our piece to chess.PIECE_SYMBOLS
+                    piece_char = piece.get_code()
+                    chess_piece = chess.Piece.from_symbol(piece_char[1].upper() if piece_char[0] == 'w' else piece_char[1].lower())
+                    square = chess.square(col, 7 - row)
+                    board.set_piece_at(square, chess_piece)
+        
+        # Set turn
+        board.turn = chess.WHITE if self.game.current_turn == 'white' else chess.BLACK
+        return board
+    
+    def convert_uci_to_move(self, uci_move):
+        """Convert UCI move (e.g., 'e2e4') to our (from_pos, to_pos) format"""
+        try:
+            # UCI format: file(a-h) + rank(1-8) + file(a-h) + rank(1-8)
+            from_col = ord(uci_move[0]) - ord('a')  # 0-7
+            from_rank = int(uci_move[1])  # 1-8
+            from_row = 8 - from_rank  # Convert to our row system
+            
+            to_col = ord(uci_move[2]) - ord('a')  # 0-7
+            to_rank = int(uci_move[3])  # 1-8
+            to_row = 8 - to_rank  # Convert to our row system
+            
+            move = ((from_row, from_col), (to_row, to_col))
+            
+            # Verify this is a legal move
+            legal_moves = self.get_all_legal_moves(self.color, self.game.board)
+            if move in legal_moves:
+                return move
+            
+            return None
+        except Exception as e:
+            print(f"Error converting UCI move {uci_move}: {e}")
+            return None
