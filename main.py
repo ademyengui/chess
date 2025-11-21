@@ -4,6 +4,7 @@ from game import *
 from ChessAI import ChessAI
 import time
 
+
 pygame.init()
 WIDTH, HEIGHT = 600, 600
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -62,7 +63,7 @@ def draw_valid_moves(valid_moves):
 
 def main():
     game = ChessGame()
-    ai = ChessAI('black', game) 
+    ai = ChessAI('black', game)
     running = True
     clock = pygame.time.Clock()
     ai_thinking = False
@@ -86,8 +87,11 @@ def main():
         if ai_thinking:
             # Give AI time to "think" (at least 0.5 seconds for realism)
             if time.time() - ai_move_time > 0.5:
+                
                 ai.make_move()
                 ai_thinking = False
+                eval_score = ai.evaluate_position(game.board)
+                print(f"Position evaluation: {eval_score:.2f}")
         
         draw_board()
         draw_pieces(game.board)
