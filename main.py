@@ -1,3 +1,4 @@
+#!/usr/bin/python3.10
 import pygame
 from pieces import *
 from game import *
