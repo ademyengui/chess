@@ -2,6 +2,8 @@
 from pieces import Pawn, Rook, Knight, Bishop, Queen, King
 import random
 import chess
+from chess_nn_evaluator import NNEvaluator
+
 
 class ChessAI:
     def __init__(self, color, game):
@@ -9,7 +11,8 @@ class ChessAI:
         self.game = game
         self.opponent_color = 'black' if color == 'white' else 'white'
         self.move_history_uci = ""  # Track all moves as UCI string
-        
+        self.nn_evaluator = NNEvaluator('/home/adem/Desktop/projects/chess/model_training/chess_eval_model.h5') # NN only
+
         # Piece values for evaluation
         self.piece_values = {
             'pawn': 1,
@@ -28,7 +31,7 @@ class ChessAI:
             print(f"Could not load opening book: {e}")
             self.opening_book = None
     
-    def get_best_move(self, depth=4):
+    def get_best_move(self, depth=2):
         """Get the best move using opening book or Minimax with Alpha-Beta Pruning"""
         
         # Try opening book first
@@ -156,8 +159,8 @@ class ChessAI:
         """Calculate how far a square is from the center (0-3, lower is better)"""
         center_row, center_col = 3.5, 3.5
         return abs(row - center_row) + abs(col - center_col)
-    def evaluate_position(self, board):
-        """Evaluate the overall position from the AI's perspective"""
+    def evaluate_position_bot(self, board):
+        """Evaluate the overall position with the simple bot"""
         score = 0
         
         # Material count
@@ -177,6 +180,54 @@ class ChessAI:
         
         return score
     
+    def evaluate_position(self, board):
+        """Evaluate position using trained neural network"""
+        try:
+            # Convert board to FEN
+            fen = self.build_chess_board_fen(board)
+            # Get NN prediction
+            score = self.nn_evaluator.evaluate(fen)
+            return score
+        except:
+            # Fallback to material count if NN fails
+            return self.evaluate_position_material(board)
+
+    def build_chess_board_fen(self, board):
+        """Convert our board to FEN string"""
+        fen_board = []
+        
+        for row in range(8):
+            empty_count = 0
+            for col in range(8):
+                piece = board[row][col]
+                if piece is None:
+                    empty_count += 1
+                else:
+                    if empty_count > 0:
+                        fen_board.append(str(empty_count))
+                        empty_count = 0
+                    
+                    piece_char = None
+                    if piece.type == 'pawn': piece_char = 'P'
+                    elif piece.type == 'night': piece_char = 'N'
+                    elif piece.type == 'bishop': piece_char = 'B'
+                    elif piece.type == 'rook': piece_char = 'R'
+                    elif piece.type == 'queen': piece_char = 'Q'
+                    elif piece.type == 'king': piece_char = 'K'
+                    
+                    if piece.color == 'black':
+                        piece_char = piece_char.lower()
+                    
+                    fen_board.append(piece_char)
+            
+            if empty_count > 0:
+                fen_board.append(str(empty_count))
+            
+            if row < 7:
+                fen_board.append('/')
+        
+        return ''.join(fen_board) + ' w KQkq - 0 1'
+
     def get_positional_bonus(self, piece, row, col, board):
         """Get positional bonus for a piece"""
         bonus = 0
