@@ -2,8 +2,8 @@
 from pieces import Pawn, Rook, Knight, Bishop, Queen, King
 import random
 import chess
-from chess_nn_evaluator import NNEvaluator
-
+from chess_nn_evaluator_v1 import NNEvaluatorV1
+from chess_nn_evaluator_v2 import NNEvaluatorV2
 
 class ChessAI:
     def __init__(self, color, game):
@@ -11,8 +11,27 @@ class ChessAI:
         self.game = game
         self.opponent_color = 'black' if color == 'white' else 'white'
         self.move_history_uci = ""  # Track all moves as UCI string
-        self.nn_evaluator = NNEvaluator('/home/adem/Desktop/projects/chess/model_training/chess_eval_model.h5') # NN only
+        # Load NN evaluator - choose version here
+        nn_version = 2  # Change to 1 or 2
 
+        if nn_version == 2:
+            try:
+                from chess_nn_evaluator_v2 import NNEvaluatorV2
+                self.nn_evaluator = NNEvaluatorV2('/home/adem/Desktop/projects/chess/model_2/chess_eval_model_final.h5')
+                self.use_nn = True
+                print("✓ Using NN evaluation V2 (781-dim bitboards)")
+            except Exception as e:
+                print(f"Could not load NN V2: {e}")
+                self.use_nn = False
+        elif nn_version == 1:
+            try:
+                from chess_nn_evaluator_v1 import NNEvaluatorV1
+                self.nn_evaluator = NNEvaluatorV1('/home/adem/Desktop/projects/chess/model_training/chess_eval_model.h5')
+                self.use_nn = True
+                print("✓ Using NN evaluation V1 (64-dim pieces)")
+            except Exception as e:
+                print(f"Could not load NN V1: {e}")
+                self.use_nn = False
         # Piece values for evaluation
         self.piece_values = {
             'pawn': 1,
@@ -30,8 +49,8 @@ class ChessAI:
         except Exception as e:
             print(f"Could not load opening book: {e}")
             self.opening_book = None
-    
-    def get_best_move(self, depth=2):
+
+    def get_best_move(self, depth=3):
         """Get the best move using opening book or Minimax with Alpha-Beta Pruning"""
         
         # Try opening book first
@@ -180,19 +199,22 @@ class ChessAI:
         
         return score
     
+    """"Evaluate position using the neural network model. If NN is not available, fall back to material evaluation."""
     def evaluate_position(self, board):
         """Evaluate position using trained neural network"""
+        if not self.use_nn:
+            return self.evaluate_position_material(board)
+        
         try:
             # Convert board to FEN
-            fen = self.build_chess_board_fen(board)
+            fen = self.board_to_fen(board)
             # Get NN prediction
             score = self.nn_evaluator.evaluate(fen)
             return score
         except:
-            # Fallback to material count if NN fails
+            # Fallback to material if NN fails
             return self.evaluate_position_material(board)
-
-    def build_chess_board_fen(self, board):
+    def board_to_fen(self, board):
         """Convert our board to FEN string"""
         fen_board = []
         
@@ -228,6 +250,20 @@ class ChessAI:
         
         return ''.join(fen_board) + ' w KQkq - 0 1'
 
+    def evaluate_position_material(self, board):
+        """Fallback: evaluate based on material only"""
+        score = 0
+        for row in range(8):
+            for col in range(8):
+                piece = board[row][col]
+                if piece is not None:
+                    piece_value = self.piece_values.get(piece.type, 0)
+                    if piece.color == self.color:
+                        score += piece_value
+                    else:
+                        score -= piece_value
+        return score
+    """The positional evaluation functions below are based on general chess principles and heuristics. They provide bonuses for good piece placement and penalties for poor placement. These are used in the simple bot evaluation function, but can be further refined or expanded with more complex heuristics as needed."""
     def get_positional_bonus(self, piece, row, col, board):
         """Get positional bonus for a piece"""
         bonus = 0

@@ -63,7 +63,7 @@ def draw_valid_moves(valid_moves):
 
 def main():
     game = ChessGame()
-    ai = ChessAI('black', game)
+    ai = ChessAI('white', game)
     running = True
     clock = pygame.time.Clock()
     ai_thinking = False
@@ -77,7 +77,7 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1 and not game.game_over and game.current_turn == 'white':
+                if event.button == 1 and not game.game_over and game.current_turn == 'black':
                     game.handle_click(event.pos)
         
         # Track player moves
@@ -86,7 +86,7 @@ def main():
             last_move = game.last_move
         
         # AI's turn
-        if game.current_turn == 'black' and not game.game_over and not ai_thinking:
+        if game.current_turn == 'white' and not game.game_over and not ai_thinking:
             ai_thinking = True
             ai_move_time = time.time()
         
