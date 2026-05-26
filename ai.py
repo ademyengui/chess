@@ -50,7 +50,7 @@ class ChessAI:
             print(f"Could not load opening book: {e}")
             self.opening_book = None
 
-    def get_best_move(self, depth=3):
+    def get_best_move(self, depth=2):
         """Get the best move using opening book or Minimax with Alpha-Beta Pruning"""
         
         # Try opening book first
